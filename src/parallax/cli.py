@@ -295,6 +295,28 @@ def chat_command(args, passthrough_args: list[str] | None = None):
     _execute_with_graceful_shutdown(cmd)
 
 
+def doctor_command(passthrough_args: list[str] | None = None):
+    """Run the environment diagnostics check."""
+    check_python_version()
+
+    project_root = get_project_root()
+    doctor_script = project_root / "src" / "parallax" / "doctor.py"
+
+    if not doctor_script.exists():
+        logger.info(f"Error: Doctor script not found at {doctor_script}")
+        sys.exit(1)
+
+    # Build the command to run the doctor.py script
+    passthrough_args = passthrough_args or []
+    cmd = [sys.executable, str(doctor_script)]
+
+    # Append any passthrough args (unrecognized by this CLI) directly to the command
+    if passthrough_args:
+        cmd.extend(passthrough_args)
+
+    _execute_with_graceful_shutdown(cmd)
+
+
 def update_package_info():
     """Update package information."""
     version = get_current_version()
@@ -415,6 +437,12 @@ Examples:
         "-r", "--use-relay", action="store_true", help="Use public relay servers"
     )
 
+    # Add 'doctor' command parser
+    doctor_parser = subparsers.add_parser("doctor", help="Run Environment Diagnostics")
+    doctor_parser.add_argument(
+        "-r", "--use-relay", action="store_true", help="Use public relay servers"
+    )
+
     # Accept unknown args and pass them through to the underlying python command
     args, passthrough_args = parser.parse_known_args()
 
@@ -428,6 +456,8 @@ Examples:
         join_command(args, passthrough_args)
     elif args.command == "chat":
         chat_command(args, passthrough_args)
+    elif args.command == "doctor":
+        doctor_command(passthrough_args)
     else:
         parser.print_help()
         sys.exit(1)
