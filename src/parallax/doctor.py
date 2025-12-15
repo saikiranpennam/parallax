@@ -18,10 +18,10 @@ def check_backend():
         # Check for CUDA
         if cuda_available:
             logger.info("CUDA Available")
-            logger.info(f" CUDA Version: {torch.version.cuda}")
-            logger.info(f" Device Count: {torch.cuda.device_count()}")
+            logger.info(f"CUDA Version: {torch.version.cuda}")
+            logger.info(f"Device Count: {torch.cuda.device_count()}")
             for i in range(torch.cuda.device_count()):
-                logger.info(f" GPU {i}: {torch.cuda.get_device_name(i)}")
+                logger.info(f"GPU {i}: {torch.cuda.get_device_name(i)}")
                 logger.info(
                     f" Memory: {torch.cuda.get_device_properties(i).total_memory / 1e9:.2f} GB"
                 )
