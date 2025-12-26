@@ -81,6 +81,8 @@ class BaseExecutor:
         # Tensor Parallel Configs
         tp_rank: Optional[int] = 0,
         tp_size: Optional[int] = 1,
+        dp_rank: Optional[int] = 0,
+        dp_size: Optional[int] = 1,
         # Optional shared state for layer reallocation detection (when running in subprocess)
         shared_state: Optional[dict] = None,
         # Weight Refit
@@ -112,6 +114,8 @@ class BaseExecutor:
         self.is_last_peer = end_layer == self.config.get("num_hidden_layers")
         self.tp_size = tp_size
         self.tp_rank = tp_rank
+        self.dp_size = dp_size
+        self.dp_rank = dp_rank
 
         # Metrics throttling for per-layer latency updates
         self.layer_latency_update_every = int(max(1, layer_latency_update_every))
@@ -186,6 +190,15 @@ class BaseExecutor:
         # store max_sequence_length
         self.max_sequence_length = max_sequence_length
         self.model_path = None
+
+        # Log executor ready status
+        logger.info(
+            f"Executor loaded successfully and ready to serve requests "
+            f"(layers [{self.start_layer}, {self.end_layer}), "
+            f"tp_rank={self.tp_rank}/{self.tp_size}, "
+            f"device={self.device}, "
+            f"num_shard_layers={self.num_shard_layers})"
+        )
 
     @abstractmethod
     def handle_input_requests(self, requests: List[Request]):
@@ -279,7 +292,9 @@ class BaseExecutor:
                                         logger.debug(
                                             f"Converting hidden_states dtype from {req.hidden_states.dtype} to {self.dtype} for request {req.request_id}"
                                         )
-                                        if self.device == "cuda":
+                                        if self.device is not None and self.device.startswith(
+                                            "cuda"
+                                        ):
                                             req.hidden_states = req.hidden_states.to(self.dtype)
                                         elif self.device == "mlx":
                                             req.hidden_states = req.hidden_states.astype(self.dtype)
@@ -298,6 +313,7 @@ class BaseExecutor:
                         abort_request.ParseFromString(recv_req[1])
                         recv_req = proto_to_abort_request(abort_request)
                         recv_reqs.extend(recv_req)
+
                     elif recv_req[0] == b"refit":
                         refit_weight_path = recv_req[1].decode("ascii")
                         self.weight_version = int(recv_req[2].decode("ascii"))
@@ -449,8 +465,8 @@ class BaseExecutor:
 
             self.handle_input_requests(received_requests)
 
-            # Send finished batch to next peer
-            if len(self.finished_batch) > 0 and self.is_first_peer and self.tp_rank == 0:
+            # Send abort signals to P2P server to broadcast to all nodes
+            if len(self.finished_batch) > 0 and self.tp_rank == 0:
                 self.send_to_peer_socket.send_multipart(
                     [b"abort", abort_request_to_proto(self.finished_batch).SerializeToString()]
                 )

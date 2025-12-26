@@ -232,7 +232,7 @@ class HTTPHandler:
                 {self.tokenizer.decode([token_id]): prob}
                 for token_id, prob in zip(request_info.token_ids_list, request_info.probs_list)
             ]
-        if request_info.weight_version:
+        if request_info.weight_version is not None:
             response["weight_version"] = request_info.weight_version
         response_json = json.dumps(response, separators=(",", ":"))
         return f"data: {response_json}\n\n".encode()
@@ -307,7 +307,7 @@ class HTTPHandler:
                 {self.tokenizer.decode([token_id]): prob}
                 for token_id, prob in zip(request_info.token_ids_list, request_info.probs_list)
             ]
-        if request_info.weight_version:
+        if request_info.weight_version is not None:
             response["weight_version"] = request_info.weight_version
         return response
 
@@ -366,7 +366,11 @@ class HTTPHandler:
                 request_info.probs_list.append(recv_dict["probs"])
                 request_info.token_ids_list.append(next_token_id)
 
-            is_finished = recv_dict.get("eos", False) or recv_dict.get("length", False)
+            is_finished = (
+                recv_dict.get("eos", False)
+                or recv_dict.get("length", False)
+                or recv_dict.get("abort", False)
+            )
 
             # Only process and send non-EOS tokens
             if not is_finished and len(output) > 0:
@@ -379,7 +383,10 @@ class HTTPHandler:
 
             # If it is the end of the stream, update status and send sentinel
             if is_finished:
-                if recv_dict.get("length", False):
+                if recv_dict.get("abort", False):
+                    logger.warning(f"Request {rid} finished with abort")
+                    request_info.finish_reason = "abort"
+                elif recv_dict.get("length", False):
                     logger.debug(f"Request {rid} finished with length")
                     request_info.finish_reason = "length"
                 elif recv_dict.get("eos", False):
