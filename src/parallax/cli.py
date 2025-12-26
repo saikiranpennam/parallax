@@ -14,6 +14,7 @@ import os
 import signal
 import subprocess
 import sys
+from pathlib import Path
 
 import requests
 
@@ -317,6 +318,40 @@ def doctor_command(passthrough_args: list[str] | None = None):
     _execute_with_graceful_shutdown(cmd)
 
 
+def vlm_command(args, passthrough_args=None):
+    """Run VLM inference command."""
+    check_python_version()
+
+    try:
+        from parallax.models.vlm import create_vlm
+
+        logger.info(f"Loading VLM model: {args.model}")
+        vlm = create_vlm(args.model)
+
+        # Validate image files if provided
+        if args.image:
+            for img_path in args.image:
+                if not Path(img_path).exists():
+                    logger.error(f"Image file not found: {img_path}")
+                    sys.exit(1)
+
+        logger.info("Generating response...")
+        _response = vlm.generate_response(
+            prompt=args.prompt, images=args.image, max_tokens=args.max_tokens, verbose=False
+        )
+
+        # print(f"\n{response}")
+
+    except ImportError as e:
+        logger.error("Failed to import VLM dependencies. Please install mlx-vlm:")
+        logger.error("pip install mlx-vlm")
+        logger.error(f"Import error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"VLM command failed: {e}")
+        sys.exit(1)
+
+
 def update_package_info():
     """Update package information."""
     version = get_current_version()
@@ -443,6 +478,20 @@ Examples:
         "-r", "--use-relay", action="store_true", help="Use public relay servers"
     )
 
+    # Add vlm parser
+    vlm_parser = subparsers.add_parser("vlm", help="Run VLM (Vision Language Model inference")
+    vlm_parser.add_argument(
+        "--model", default="mlx-community/Qwen2-VL-2B-Instruct-4bit", help="VLM model to use"
+    )
+    vlm_parser.add_argument("--prompt", required=True, help="Text prompt for VLM inference")
+    vlm_parser.add_argument(
+        "--image", action="append", help="Path to image file (can be used multiple times)"
+    )
+    vlm_parser.add_argument(
+        "--max-tokens", type=int, default=100, help="Maximum number of tokens to generate"
+    )
+    vlm_parser.add_argument("--quiet", "-q", action="store_true", help="Suppress output")
+
     # Accept unknown args and pass them through to the underlying python command
     args, passthrough_args = parser.parse_known_args()
 
@@ -458,6 +507,8 @@ Examples:
         chat_command(args, passthrough_args)
     elif args.command == "doctor":
         doctor_command(passthrough_args)
+    elif args.command == "vlm":
+        vlm_command(args, passthrough_args)
     else:
         parser.print_help()
         sys.exit(1)
